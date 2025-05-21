@@ -121,10 +121,70 @@ Sistem ini mengimplementasikan monitoring sensor suhu dan kelembaban gudang meng
      - Peringatan kelembaban tinggi (>70%)
      - Status gabungan suhu dan kelembaban
 
+## Struktur
+
+```
+kafka/
+│
+├── docker-compose.yml
+├── app/
+│   ├── producer_suhu.py
+│   ├── producer_kelembaban.py
+│   ├── consumer_pyspark.py
+│   └── requirements.txt
+```
+
 ## Prasyarat
 
 - Docker
 - Docker Compose
+
+## docker-compose.yml
+
+```docker
+version: "3.8"
+
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
+  pyspark:
+    image: bitnami/spark:3.5
+    container_name: pyspark
+    depends_on:
+      - kafka
+    ports:
+      - "4040:4040"
+    environment:
+      - SPARK_MODE=client
+      - HOME=/home/sparkuser
+    user: root # Jalankan sebagai root agar bisa buat user baru
+    volumes:
+      - ./app:/app
+    working_dir: /app
+    command: bash -c "useradd -m sparkuser && export HOME=/home/sparkuser && su - sparkuser -c 'tail -f /dev/null'"
+
+```
 
 ## producer_suhu.py
 
@@ -337,7 +397,7 @@ query_gabungan.awaitTermination()
     docker exec -it kafka bash
     ```
 
-4.  **Buat Topik**
+4.  **Buat Topik di dalam Container Kafka **
 
     ```bash
     kafka-topics --create --topic sensor-suhu-gudang --bootstrap-server localhost:9092 --partitions 1 --replication-factor 1
@@ -356,13 +416,13 @@ query_gabungan.awaitTermination()
     docker exec -it pyspark bash
     ```
 
-7.  **Install dependencies**
+7.  **Install dependencies di dalam Container Pyspark**
 
     ```bash
     pip install -r requirements.txt
     ```
 
-8.  **Jalankan producer dan consumer**
+8.  **Jalankan producer dan consumer di dalam Container Pyspark\***
 
     - Buka terminal baru untuk setiap proses
     - Terminal 1 (Producer Suhu):
@@ -398,11 +458,17 @@ Consumer akan menampilkan:
    - "Kelembaban tinggi, suhu aman" (kelembaban >70%)
    - "Aman" (kondisi normal)
 
+![producer_suhu](/img/producer_suhu.png)
+
+![producer_kelembaban](/img/producer_kelembaban.png)
+
+![consumer](/img/consumer.png)
+
 ## Struktur Docker
 
 - **Zookeeper**: Port 2181
 - **Kafka**: Port 9092
-- **PySpark**: Port 4040 (Spark UI)
+- **PySpark**: Port 4040 (Spark UI) atau `http://localhost:4040`
 
 ## Catatan
 
